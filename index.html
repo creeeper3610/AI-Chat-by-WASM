@@ -59,12 +59,12 @@
         Module.ccall('init_engine', null, ['number'], [device]);
         log(" C++ WASMエンジンとWebGPUのバインド完了！");
 
-        // Hugging Face等からのモデルファイル取得 (メモリ圧迫回避のストリーミング)
-        const modelUrl = "https://huggingface.co/google/gemma-3-2b-it-gguf/resolve/main/gemma-3-2b-it-q4_k_m.gguf";
-        log(" Gemma 3モデルのストリーミングダウンロードを開始...");
+        // Hugging Faceからのモデルファイル取得 (Gemma 2 2B)
+        const modelUrl = "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf";
+        log(" Gemma 2 2Bモデルのストリーミングダウンロードを開始...");
         
-        // C++のVRAM領域を確保 (例: 1.5GB)
-        const modelSizeBytes = BigInt(1500 * 1024 * 1024);
+        // Gemma 2 2B用のVRAM領域確保 (約1.6GB)
+        const modelSizeBytes = BigInt(1600) * BigInt(1024) * BigInt(1024);
         Module.ccall('setup_model_memory', null, ['bigint'], [modelSizeBytes]);
 
         log(" 準備完了！Gemma 3をWebGPU上で動かせるよ！");
