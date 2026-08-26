@@ -2,13 +2,14 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Gemma 3 Local WASM Engine</title>
+  <title>Gemma 2 WebGPU Ultra-Fast Chat</title>
   <style>
     body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; background: #f9f9f9; }
-    #log { background: #1a1a1a; color: #00ff66; padding: 12px; border-radius: 6px; height: 120px; overflow-y: auto; font-family: monospace; font-size: 12px; }
-    #chat-container { border: 1px solid #ccc; background: #fff; border-radius: 8px; padding: 15px; height: 350px; display: flex; flex-direction: column; margin-top: 15px; }
+    #log { background: #1a1a1a; color: #00ff66; padding: 12px; border-radius: 6px; height: 100px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+    #progress-container { margin-top: 8px; font-size: 13px; color: #555; }
+    #chat-container { border: 1px solid #ccc; background: #fff; border-radius: 8px; padding: 15px; height: 380px; display: flex; flex-direction: column; margin-top: 15px; }
     #chat-history { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-    .msg { padding: 8px 12px; border-radius: 8px; max-width: 70%; word-break: break-word; }
+    .msg { padding: 8px 12px; border-radius: 8px; max-width: 75%; word-break: break-word; line-height: 1.4; }
     .user { align-self: flex-end; background: #007bff; color: white; }
     .assistant { align-self: flex-start; background: #eee; color: #333; }
     #input-box { display: flex; gap: 10px; margin-top: 10px; }
@@ -16,26 +17,12 @@
     button { padding: 10px 20px; border: none; background: #28a745; color: white; border-radius: 4px; cursor: pointer; }
     button:disabled { background: #ccc; }
   </style>
-  <!-- Emscriptenが生成したJSバインディング -->
-  <script src="gemma3_engine.js"></script>
-</head>
-<body>
+  <!-- WebGPU最適化推論エンジン (WebLLM) の読み込み -->
+  <script type="module">
+    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
-  <h1>Gemma 3 C++ WASM + WebGPU Chat</h1>
-  <pre id="log">1. C++ WASMモジュールを読み込み中...</pre>
-
-  <div id="chat-container">
-    <div id="chat-history">
-      <div class="msg assistant">C++ WASMエンジンが準備完了したらメッセージを入力してね！</div>
-    </div>
-    <div id="input-box">
-      <input type="text" id="userInput" placeholder="メッセージを入力..." disabled />
-      <button id="sendBtn" disabled>送信</button>
-    </div>
-  </div>
-
-  <script>
     const logEl = document.getElementById('log');
+    const progressEl = document.getElementById('progress-text');
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const chatHistory = document.getElementById('chat-history');
@@ -45,59 +32,110 @@
       logEl.scrollTop = logEl.scrollHeight;
     }
 
-    // Emscripten WASM初期化フック
-    Module.onRuntimeInitialized = async () => {
-      log(" WASMファイルの読み込みに成功したよ！");
-      
+    // 爆速・高精度な Gemma 2 2B (または Smooth/Q4モデル) を指定
+    const selectedModel = "gemma-2-2b-it-q4f16_1-MLC";
+
+    let engine;
+
+    async function init() {
       try {
-        if (!navigator.gpu) throw new Error("WebGPUに対応していません。");
-        const adapter = await navigator.gpu.requestAdapter();
-        const device = await adapter.requestDevice();
-        log(" WebGPUの初期化成功！");
+        if (!navigator.gpu) {
+          log("エラー: お使いのブラウザはWebGPUに対応していません。");
+          return;
+        }
 
-        // C++側の init_engine(WGPUDevice) を呼び出し
-        Module.ccall('init_engine', null, ['number'], [device]);
-        log(" C++ WASMエンジンとWebGPUのバインド完了！");
-
-        // Hugging Faceからのモデルファイル取得 (Gemma 2 2B)
-        const modelUrl = "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf";
-        log(" Gemma 2 2Bモデルのストリーミングダウンロードを開始...");
+        log("WebGPUエンジンの初期化を開始するよ...");
         
-        // Gemma 2 2B用のVRAM領域確保 (約1.6GB)
-        const modelSizeBytes = BigInt(1600) * BigInt(1024) * BigInt(1024);
-        Module.ccall('setup_model_memory', null, ['bigint'], [modelSizeBytes]);
+        // 進捗状況を画面にリアルタイム表示
+        const initProgressCallback = (report) => {
+          progressEl.textContent = report.text;
+          log(report.text);
+        };
 
-        log(" 準備完了！Gemma 3をWebGPU上で動かせるよ！");
+        // WebGPUエンジンの生成（モデルデータは自動でローカルキャッシュされるよ）
+        engine = await webllm.CreateMLCEngine(
+          selectedModel,
+          { initProgressCallback: initProgressCallback }
+        );
+
+        log(" 準備完了！Gemma 2がWebGPU上で爆速で動く状態になったよ！");
+        progressEl.textContent = "準備完了！";
         userInput.disabled = false;
         sendBtn.disabled = false;
 
       } catch (err) {
-        log("エラー: " + err.message);
+        log("エラーが発生したよ: " + err.message);
       }
-    };
+    }
 
     async function handleSend() {
       const text = userInput.value.trim();
-      if (!text) return;
+      if (!text || !engine) return;
 
-      // ユーザー画面描画
+      // ユーザー発言描画
       const userMsg = document.createElement('div');
       userMsg.className = 'msg user';
       userMsg.textContent = text;
       chatHistory.appendChild(userMsg);
       userInput.value = '';
+      sendBtn.disabled = true;
 
-      // C++ WASM側の推論ステップ呼び出し
-      log("C++ WASM -> WebGPU パイプラインで推論を実行中...");
-      
+      // AI応答用の空枠を作成
       const assistantMsg = document.createElement('div');
       assistantMsg.className = 'msg assistant';
-      assistantMsg.textContent = "Gemma 3 (C++ WASM): 推論完了！";
+      assistantMsg.textContent = "...";
       chatHistory.appendChild(assistantMsg);
       chatHistory.scrollTop = chatHistory.scrollHeight;
+
+      // ストリーミング再生（1文字ずつリアルタイム爆速生成）
+      const messages = [
+        { role: "system", content: "あなたは親切でフレンドリーなAIアシスタントです。" },
+        { role: "user", content: text }
+      ];
+
+      try {
+        const completion = await engine.chat.completions.create({
+          messages,
+          stream: true,
+        });
+
+        let fullReply = "";
+        for await (const chunk of completion) {
+          const delta = chunk.choices[0]?.delta?.content || "";
+          fullReply += delta;
+          assistantMsg.textContent = fullReply;
+          chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+      } catch (e) {
+        assistantMsg.textContent = "エラーが発生しました: " + e.message;
+      }
+
+      sendBtn.disabled = false;
     }
 
     sendBtn.addEventListener('click', handleSend);
+    userInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') handleSend();
+    });
+
+    init();
   </script>
+</head>
+<body>
+
+  <h1>Gemma 2 WebGPU Ultra-Fast Chat</h1>
+  <pre id="log">1. WebGPU環境を確認中...</pre>
+  <div id="progress-container">ステータス: <span id="progress-text">初期化中...</span></div>
+
+  <div id="chat-container">
+    <div id="chat-history">
+      <div class="msg assistant">こんにちは！準備ができたらメッセージを送ってね！</div>
+    </div>
+    <div id="input-box">
+      <input type="text" id="userInput" placeholder="メッセージを入力..." disabled />
+      <button id="sendBtn" disabled>送信</button>
+    </div>
+  </div>
+
 </body>
 </html>
