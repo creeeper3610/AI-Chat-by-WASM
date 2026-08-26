@@ -64,8 +64,8 @@
         log(" Gemma 3モデルのストリーミングダウンロードを開始...");
         
         // C++のVRAM領域を確保 (例: 1.5GB)
-        const modelSizeBytes = 1500 * 1024 * 1024;
-        Module.ccall('setup_model_memory', null, ['number'], [modelSizeBytes]);
+        const modelSizeBytes = BigInt(1500 * 1024 * 1024);
+        Module.ccall('setup_model_memory', null, ['bigint'], [modelSizeBytes]);
 
         log(" 準備完了！Gemma 3をWebGPU上で動かせるよ！");
         userInput.disabled = false;
